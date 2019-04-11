@@ -38,5 +38,6 @@ net = AE()
 util.train(net,X_train, y_train)
 
 accuracy=util.testNet(net, X_test, y_test, 1)
+
 print(accuracy)
 
