@@ -24,7 +24,7 @@ class Create_Dataset:
 
     def read_data(self):
         
-        dataset = pd.read_csv('./xAPI-Edu-Data.csv')
+        dataset = pd.read_csv('../dataset/xAPI-Edu-Data.csv')
 
         imp_features = dataset.drop(['gender', 'NationalITy', 'Semester', 'PlaceofBirth', 'GradeID', 'Topic', 'SectionID', 'Relation'], axis=1)
         stage_mapping = {"lowerlevel":0, "MiddleSchool":1, "HighSchool":2}
@@ -103,13 +103,15 @@ def train(model, input_tensor, label_tensor, criterion_decoder, criterion_classi
     return(model, runningLoss/float(batch_counter))
 
 
-def testNet(model, input_tensor, label_tensor, batchsize, device):
+def testNet(model, input_tensor, label_tensor, criterion_decoder, criterion_classifier, batchsize, device):
 
     model.eval()
 
     testsize = int(input_tensor.shape[0])
 
     corrects = 0.0
+
+    runningLoss = 0.0
 
     with torch.no_grad():      
 
@@ -128,9 +130,13 @@ def testNet(model, input_tensor, label_tensor, batchsize, device):
             # Feed-forward
             output_decoder, output_classifier = model(inputs)
 
+            loss = criterion_decoder(output_decoder, inputs)+criterion_classifier(output_classifier, labels)
+            # Accumulate loss per batch
+            runningLoss += loss.data.cpu()
+
             _, predicted = torch.max(output_classifier.data, 1)
 
             corrects += ((predicted==labels).sum(0)).float()
 
-    return corrects/float(testsize)
+    return (corrects/float(testsize), runningLoss/float(testsize))
 
