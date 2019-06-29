@@ -25,7 +25,7 @@ class Create_Dataset():
 
     def read_data(self):
         
-        dataset = pd.read_csv('../dataset/xAPI-Edu-Data.csv')
+        dataset = pd.read_csv('../../dataset/xAPI-Edu-Data.csv')
 
         self.data_size = dataset.shape[0]
 
@@ -76,54 +76,43 @@ def init_weights(m):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
 
-def train_epoch(model, input_array, label_array, criterion_decoder, criterion_classifier, optimizer, batch_size, w1, device):
+def train_epoch(model, input_array, criterion, optimizer, batch_size, device):
     
     model.train()
 
     runningLoss = 0 
 
-    trainsize = int(input_array.shape[0]) 
-
-    corrects = 0       
+    trainsize = int(input_array.shape[0])   
     
     for i in range(0, trainsize, batch_size):
 
         if i+batch_size<=trainsize:
             inputs = input_array[i:i+batch_size]
-            labels = label_array[i:i+batch_size]
-
         else:
             inputs = input_array[i:]
-            labels = label_array[i:]
 
-        inputs, labels = Variable(torch.from_numpy(inputs).float().to(device)), Variable(torch.from_numpy(labels).long().to(device))
+        inputs = Variable(torch.from_numpy(inputs).float().to(device))
         # Initialize gradients to zero
         optimizer.zero_grad()                       
         # Feed-forward
-        output_decoder, output_classifier = model(inputs)
+        output = model(inputs)
         # Compute loss/error
-        loss = (1-w1)*criterion_decoder(output_decoder, inputs)+w1*criterion_classifier(output_classifier, labels)
+        loss = criterion(output, inputs)
         # Accumulate loss per batch
         runningLoss += loss.item()
         # Backpropagate loss and compute gradients
         loss.backward()
         # Update the network parameters
         optimizer.step()
-
-        class_scores = F.softmax(output_classifier, dim=1)
-        _, predicted = torch.max(class_scores.data, 1)
-        corrects += ((predicted==labels).sum(0)).float()
                 
-    return(model, runningLoss/float(trainsize/batch_size), corrects/trainsize)
+    return(model, runningLoss/float(trainsize/batch_size))
 
 
-def val_epoch(model, input_array, label_array, criterion_decoder, criterion_classifier, batch_size, device):
+def val_epoch(model, input_array, criterion, batch_size, device):
 
     model.eval()
 
     valsize = int(input_array.shape[0])
-
-    corrects = 0.0
 
     runningLoss = 0.0
 
@@ -133,53 +122,16 @@ def val_epoch(model, input_array, label_array, criterion_decoder, criterion_clas
 
             if i+batch_size<=valsize:
                 inputs = input_array[i:i+batch_size]
-                labels = label_array[i:i+batch_size]
-
             else:
                 inputs = input_array[i:]
-                labels = label_array[i:]
 
-            inputs, labels = torch.from_numpy(inputs).float().to(device), torch.from_numpy(labels).long().to(device)
+            inputs = torch.from_numpy(inputs).float().to(device)
             # Feed-forward
-            output_decoder, output_classifier = model(inputs)
+            output = model(inputs)
             
-            loss = criterion_decoder(output_decoder, inputs)+criterion_classifier(output_classifier, labels)
+            loss = criterion(output, inputs)
             # Accumulate loss per batch
             runningLoss += loss.item()
 
-            class_scores = F.softmax(output_classifier, dim=1)
-            _, predicted = torch.max(class_scores.data, 1)
-            corrects += ((predicted==labels).sum(0)).float()
-
-    return (runningLoss/float(valsize/batch_size), corrects/valsize)
-
-def test_model(model, input_array, label_array, batch_size, device):
-
-    model.eval()
-
-    testsize = int(input_array.shape[0])
-
-    corrects = 0.0
-
-    with torch.no_grad():      
-
-        for i in range(0, testsize, batch_size):
-
-            if i+batch_size<=testsize:
-                inputs = input_array[i:i+batch_size]
-                labels = label_array[i:i+batch_size]
-
-            else:
-                inputs = input_array[i:]
-                labels = label_array[i:]
-
-            inputs, labels = torch.from_numpy(inputs).float().to(device), torch.from_numpy(labels).long().to(device)                      
-            # Feed-forward
-            output_decoder, output_classifier = model(inputs)
-            
-            class_scores = F.softmax(output_classifier, dim=1)
-            _, predicted = torch.max(class_scores.data, 1)
-            corrects += ((predicted==labels).sum(0)).float()
-
-    return corrects/testsize
+    return (runningLoss/float(valsize/batch_size))
 
