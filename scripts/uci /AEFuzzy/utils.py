@@ -8,7 +8,7 @@ from torch.autograd import Variable, Function
 # from sklearn.metrics import r2_score
 
 class Create_Dataset:
-    def __init__(self, data_size, num_fuzz_var):
+    def __init__(self, data_size, num_fuzz_var, mf={}):
         
         self.data_size = data_size
         self.num_fuzz_var = num_fuzz_var
