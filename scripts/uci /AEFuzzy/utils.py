@@ -8,46 +8,46 @@ from torch.autograd import Variable, Function
 # from sklearn.metrics import r2_score
 
 class Create_Dataset:
-    def __init__(self, data_size, num_fuzz_var, mf={}):
+    def __init__(self, data_size, num_fuzz_var, mf_absence={}, mf_grades, subject):
         
         self.data_size = data_size
         self.num_fuzz_var = num_fuzz_var
-
-    def fuzzy_mf(self, rng_absence, rng_grades):
-    
         self.mf_absence = {}
-        
+        self.mf_grades = {}
+        self.subject = subject
+
         self.mf_absence['lo'] = fuzz.trapmf(rng_absence, [0, 0, 10, 25])
         self.mf_absence['md'] = fuzz.trimf(rng_absence, [10, 25, 50])
         self.mf_absence['hi'] = fuzz.trapmf(rng_absence, [40, 50, 75, 75])
-
-        self.mf_grades = {}
 
         self.mf_grades['lo'] = fuzz.trapmf(rng_grades, [0, 0, 5, 10])
         self.mf_grades['md'] = fuzz.trimf(rng_grades, [5, 10, 15])
         self.mf_grades['hi'] = fuzz.trapmf(rng_grades, [10, 15, 20, 20])
 
-
+        self.read_data()
 
     def read_data(self):
         
-        dataset = pd.read_csv('../dataset/student-mat.csv', sep=';')
+        if self.subject:
+            dataset = pd.read_csv('../dataset/student-mat.csv', sep=';')
+        else:
+            dataset = pd.read_csv
 
         imp_features = dataset.drop(['school', 'sex', 'reason'], axis=1)
-        address_mapping = {"U":0.5, "R":1}
-        famsize_mapping = {"LE3":0.5,"GT3":1}
-        Pstatus_mapping = {"T":0.5,"A":1}
-        Mjob_mapping = {"teacher":0.2,"health":0.4,"services":0.6,"at_home":0.8,"other":1.0}
-        Fjob_mapping = {"teacher":0.2,"health":0.4,"services":0.6,"at_home":0.8,"other":1.0}
-        schoolsup_mapping = {"yes":0.5,"no":1}
-        famsup_mapping = {"yes":0.5,"no":1}
-        paid_mapping = {"yes":0.5,"no":1}
-        activities_mapping = {"yes":0.5,"no":1}
-        nursery_mapping = {"yes":0.5,"no":1}
-        higher_mapping = {"yes":0.5,"no":1}
-        internet_mapping = {"yes":0.5,"no":1}
-        romantic_mapping = {"yes":0.5,"no":1}
-        guardian_mapping = {"mother":0.33,"father":0.66,"other":1}
+        address_mapping = {"U":0, "R":1}
+        famsize_mapping = {"LE3":0,"GT3":1}
+        Pstatus_mapping = {"T":0,"A":1}
+        Mjob_mapping = {"teacher":0,"health":1,"services":2,"at_home":3,"other":4}
+        Fjob_mapping = {"teacher":0,"health":1,"services":2,"at_home":3,"other":4}
+        schoolsup_mapping = {"yes":0,"no":1}
+        famsup_mapping = {"yes":0,"no":1}
+        paid_mapping = {"yes":0,"no":1}
+        activities_mapping = {"yes":0,"no":1}
+        nursery_mapping = {"yes":0,"no":1}
+        higher_mapping = {"yes":0,"no":1}
+        internet_mapping = {"yes":0,"no":1}
+        romantic_mapping = {"yes":0,"no":1}
+        guardian_mapping = {"mother":0,"father":1,"other":2}
         
         numeric_features = imp_features
         numeric_features['address'] = imp_features['address'].map(address_mapping)
@@ -71,26 +71,27 @@ class Create_Dataset:
         self.X_fuzzy = data_np_array[:,-4:-1]
         self.Y = data_np_array[:,-1:]
 
-
-    def prepare_data(self, rng_absence, rng_grades):
-        
-        x = np.zeros((self.data_size,self.num_fuzz_var*3))
-
-        for i in range(self.data_size):
+        def __prepare_data(self, rng_absence, rng_grades):
             
-            x[i,0]=fuzz.interp_membership(rng_absence, self.mf_absence['lo'], self.X_fuzzy[i,0])
-            x[i,1]=fuzz.interp_membership(rng_absence, self.mf_absence['md'], self.X_fuzzy[i,0])
-            x[i,2]=fuzz.interp_membership(rng_absence, self.mf_absence['hi'], self.X_fuzzy[i,0])
+            x = np.zeros((self.data_size,self.num_fuzz_var*3))
 
-        for i in range(self.data_size):
+            for i in range(self.data_size):
+                
+                x[i,0]=fuzz.interp_membership(rng_absence, self.mf_absence['lo'], self.X_fuzzy[i,0])
+                x[i,1]=fuzz.interp_membership(rng_absence, self.mf_absence['md'], self.X_fuzzy[i,0])
+                x[i,2]=fuzz.interp_membership(rng_absence, self.mf_absence['hi'], self.X_fuzzy[i,0])
+
+            for i in range(self.data_size):
+                
+                for j in range(1,self.num_fuzz_var):
+
+                    x[i,j*3] = fuzz.interp_membership(rng_grades, self.mf_grades['lo'], self.X_fuzzy[i,j]) 
+                    x[i,j*3+1] = fuzz.interp_membership(rng_grades, self.mf_grades['md'], self.X_fuzzy[i,j])
+                    x[i,j*3+2] = fuzz.interp_membership(rng_grades, self.mf_grades['hi'], self.X_fuzzy[i,j])
             
-            for j in range(1,self.num_fuzz_var):
+            return np.concatenate((self.X_crisp,x),axis=1)
 
-                x[i,j*3] = fuzz.interp_membership(rng_grades, self.mf_grades['lo'], self.X_fuzzy[i,j]) 
-                x[i,j*3+1] = fuzz.interp_membership(rng_grades, self.mf_grades['md'], self.X_fuzzy[i,j])
-                x[i,j*3+2] = fuzz.interp_membership(rng_grades, self.mf_grades['hi'], self.X_fuzzy[i,j])
-
-        self.X=np.concatenate((self.X_crisp,x),axis=1)
+        self.X = __prepare_data()
 
 
 def train(model, input_tensor, label_tensor, criterion_decoder, criterion_regressor, optimizer, batch_size, w1, w2, device):

@@ -22,7 +22,6 @@ class Create_Dataset():
 
         self.read_data()
 
-
     def read_data(self):
         
         dataset = pd.read_csv('../dataset/xAPI-Edu-Data.csv')
