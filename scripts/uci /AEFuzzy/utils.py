@@ -5,15 +5,17 @@ import torch
 import numpy as np
 import torch.nn as nn
 from torch.autograd import Variable, Function
-# from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score
 
-class Create_Dataset:
-    def __init__(self, data_size, num_fuzz_var, mf_absence={}, mf_grades, subject):
+class Create_Dataset():
+    def __init__(self, data_size, num_fuzz_var, mf_absence={}, mf_grades={}, rng_absence, rng_grades, subject=0):
         
         self.data_size = data_size
         self.num_fuzz_var = num_fuzz_var
-        self.mf_absence = {}
-        self.mf_grades = {}
+        self.mf_absence = mf_absence
+        self.mf_grades = mf_grades
+        self.rng_absence = rng_absence
+        self.rng_grades = rng_grades
         self.subject = subject
 
         self.mf_absence['lo'] = fuzz.trapmf(rng_absence, [0, 0, 10, 25])
@@ -31,7 +33,7 @@ class Create_Dataset:
         if self.subject:
             dataset = pd.read_csv('../dataset/student-mat.csv', sep=';')
         else:
-            dataset = pd.read_csv
+            dataset = pd.read_csv('../dataset/student-por.csv', sep=';')
 
         imp_features = dataset.drop(['school', 'sex', 'reason'], axis=1)
         address_mapping = {"U":0, "R":1}
@@ -69,124 +71,172 @@ class Create_Dataset:
 
         self.X_crisp = data_np_array[:,:-4]
         self.X_fuzzy = data_np_array[:,-4:-1]
-        self.Y = data_np_array[:,-1:]
+        self.Y = data_np_array[:, data_np_array.shape[1]-1]
 
-        def __prepare_data(self, rng_absence, rng_grades):
+        def __prepare_data():
             
             x = np.zeros((self.data_size,self.num_fuzz_var*3))
 
             for i in range(self.data_size):
                 
-                x[i,0]=fuzz.interp_membership(rng_absence, self.mf_absence['lo'], self.X_fuzzy[i,0])
-                x[i,1]=fuzz.interp_membership(rng_absence, self.mf_absence['md'], self.X_fuzzy[i,0])
-                x[i,2]=fuzz.interp_membership(rng_absence, self.mf_absence['hi'], self.X_fuzzy[i,0])
+                x[i,0]=fuzz.interp_membership(self.rng_absence, self.mf_absence['lo'], self.X_fuzzy[i,0])
+                x[i,1]=fuzz.interp_membership(self.rng_absence, self.mf_absence['md'], self.X_fuzzy[i,0])
+                x[i,2]=fuzz.interp_membership(self.rng_absence, self.mf_absence['hi'], self.X_fuzzy[i,0])
 
             for i in range(self.data_size):
                 
                 for j in range(1,self.num_fuzz_var):
 
-                    x[i,j*3] = fuzz.interp_membership(rng_grades, self.mf_grades['lo'], self.X_fuzzy[i,j]) 
-                    x[i,j*3+1] = fuzz.interp_membership(rng_grades, self.mf_grades['md'], self.X_fuzzy[i,j])
-                    x[i,j*3+2] = fuzz.interp_membership(rng_grades, self.mf_grades['hi'], self.X_fuzzy[i,j])
+                    x[i,j*3] = fuzz.interp_membership(self.rng_grades, self.mf_grades['lo'], self.X_fuzzy[i,j]) 
+                    x[i,j*3+1] = fuzz.interp_membership(self.rng_grades, self.mf_grades['md'], self.X_fuzzy[i,j])
+                    x[i,j*3+2] = fuzz.interp_membership(self.rng_grades, self.mf_grades['hi'], self.X_fuzzy[i,j])
             
             return np.concatenate((self.X_crisp,x),axis=1)
 
         self.X = __prepare_data()
 
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight)
+        nn.init.zeros_(m.bias)
+    elif isinstance(m, nn.BatchNorm1d):
+        nn.init.constant_(m.weight, 1)
+        nn.init.constant_(m.bias, 0)
 
-def train(model, input_tensor, label_tensor, criterion_decoder, criterion_regressor, optimizer, batch_size, w1, w2, device):
+def train_epoch(model, input_array, label_array, criterion_decoder, criterion_regressor, optimizer, batch_size, w1, device):
     
     model.train()
 
-    runningLoss = 0 
+    runningLoss = 0.0 
 
-    trainsize = int(input_tensor.shape[0])
+    trainsize = int(input_array.shape[0])
 
-    batch_counter = 0        
+    y_pred=[]
+    y_true=[]        
     
     for i in range(0, trainsize, batch_size):
 
         if i+batch_size<=trainsize:
-            inputs = input_tensor[i:i+batch_size]
-            labels = label_tensor[i:i+batch_size]
-
+            inputs = input_array[i:i+batch_size]
+            labels = label_array[i:i+batch_size]
         else:
-            inputs = input_tensor[i:]
-            labels = label_tensor[i:]
+            inputs = input_array[i:]
+            labels = label_array[i:]
 
-        inputs, labels = Variable(inputs.float().to(device)), Variable(labels.to(device))                       
-
-        # Feed-forward
-        output_decoder, output_regressor = model(inputs) # 
-
-        output_regressor = torch.squeeze(output_regressor, dim=1)
-
-        # Compute loss/error
-        loss =  w1*criterion_decoder(output_decoder, inputs)+w2*criterion_regressor(output_regressor, labels)
-        # Accumulate loss per batch
-        runningLoss += loss.data.cpu()
+        if y_true:
+            y_true = np.vstack([y_true, labels])
+        else:
+            y_true = labels
+        
+        inputs, labels = Variable(torch.from_numpy(inputs).float().to(device)), Variable(torch.from_numpy(labels).float().to(device))                       
         # Initialize gradients to zero
         optimizer.zero_grad()
+        # Feed-forward
+        output_decoder, output_regressor = model(inputs)
+        
+        output_regressor = torch.squeeze(output_regressor, dim=1)
+        
+        if y_pred:
+            y_pred = np.vstack([y_pred, output_regressor.detach().cpu().numpy()])
+        else:
+            y_pred = output_regressor.detach().cpu().numpy()
+        # Compute loss/error
+        loss =  (1-w1)*criterion_decoder(output_decoder, inputs)+w1*criterion_regressor(output_regressor, labels)
+        # Accumulate loss per batch
+        runningLoss += loss.item()
         # Backpropagate loss and compute gradients
         loss.backward()
         # Update the network parameters
         optimizer.step()
 
-        batch_counter += 1
+    train_r2 = r2_score(y_true, y_pred)
 
-    return(model, runningLoss/float(batch_counter))
+    return(model, runningLoss/float(trainsize/batch_size), train_r2)
 
 
-def testNet(model, input_tensor, label_tensor, criterion_decoder, criterion_regressor, batchsize, device):
+def val_epoch(model, input_array, label_array, criterion_decoder, criterion_regressor, batch_size, device):
 
     model.eval()
 
-    testsize = int(input_tensor.shape[0])
-
-    R2_score = 0.0
+    valsize = int(input_array.shape[0])
 
     runningLoss = 0.0
 
+    y_pred=[]
+    y_true=[] 
+
     with torch.no_grad():      
 
-        for i in range(0, testsize, batchsize):
+        for i in range(0, valsize, batch_size):
 
-            if i+batchsize<=testsize:
-                inputs = input_tensor[i:i+batchsize]
-                labels = label_tensor[i:i+batchsize]
-
+            if i+batch_size<=valsize:
+                inputs = input_array[i:i+batch_size]
+                labels = label_array[i:i+batch_size]
             else:
-                inputs = input_tensor[i:]
-                labels = label_tensor[i:]
+                inputs = input_array[i:]
+                labels = label_array[i:]
 
-            inputs, labels = Variable(inputs.float().to(device)), Variable(labels.to(device))                      
+            if y_true:
+                y_true = np.vstack([y_true, labels])
+            else:
+                y_true = labels
 
+            inputs, labels = torch.from_numpy(inputs).float().to(device), torch.from_numpy(labels).float().to(device)                      
             # Feed-forward
-            output_decoder, output_regressor = model(inputs) # 
+            output_decoder, output_regressor = model(inputs)
 
             output_regressor = torch.squeeze(output_regressor, dim=1)
 
             loss = criterion_decoder(output_decoder, inputs)+criterion_regressor(output_regressor, labels)
             # Accumulate loss per batch
-            runningLoss += loss.data.cpu()
+            runningLoss += loss.item()
 
-            # print('LABEL:{}, OP:{}'.format(labels, output_regressor))
+            if y_pred:
+                y_pred = np.vstack([y_pred, output_regressor.cpu().numpy()])
+            else:
+                y_pred = output_regressor.cpu().numpy()
 
-            # print(output_regressor, labels)
+    val_r2 = r2_score(y_true, y_pred)
 
-            R2_score = R2_score + r2_score(output_regressor.cpu().numpy(), labels.cpu().numpy())
+    return (runningLoss/float(valsize/batchsize), val_r2)
 
-            # print(r2_score(output_regressor.cpu().numpy(), labels.cpu().numpy()))
+def test_model(model, input_array, label_array, batch_size, device):
 
-    return (R2_score/float(testsize/batchsize), runningLoss/float(testsize/batchsize))
+    model.eval()
 
+    testsize = int(input_array.shape[0])
 
-def r2_score(y_pred, y_true):
-    
-    mean = np.mean(y_true)
+    y_pred=[]
+    y_true=[]
 
-    numerator = np.mean((y_true - y_pred)**2)
-    denominator = np.mean((y_true-mean)**2)
+    with torch.no_grad():      
 
-    return 1.0 - numerator/(denominator+1e-8)
+        for i in range(0, testsize, batch_size):
+
+            if i+batch_size<=testsize:
+                inputs = input_array[i:i+batch_size]
+                labels = label_array[i:i+batch_size]
+            else:
+                inputs = input_array[i:]
+                labels = label_array[i:]
+
+            if y_true:
+                y_true = np.vstack([y_true, labels])
+            else:
+                y_true = labels
+
+            inputs = torch.from_numpy(inputs).float().to(device) 
+            # Feed-forward
+            output_decoder, output_regressor = model(inputs)
+
+            output_regressor = torch.squeeze(output_regressor, dim=1)
+
+            if y_pred:
+                y_pred = np.vstack([y_pred, output_regressor.cpu().numpy()])
+            else:
+                y_pred = output_regressor.cpu().numpy()
+
+    test_r2 = r2_score(y_true, y_pred)
+
+    return test_r2
     
