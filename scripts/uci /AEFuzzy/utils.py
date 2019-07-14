@@ -8,12 +8,12 @@ from torch.autograd import Variable, Function
 from sklearn.metrics import r2_score
 
 class Create_Dataset():
-    def __init__(self, data_size, num_fuzz_var, mf_absence={}, mf_grades={}, rng_absence, rng_grades, subject=0):
+    def __init__(self, data_size, num_fuzz_var, rng_absence, rng_grades, subject=0):
         
         self.data_size = data_size
         self.num_fuzz_var = num_fuzz_var
-        self.mf_absence = mf_absence
-        self.mf_grades = mf_grades
+        self.mf_absence = {}
+        self.mf_grades = {}
         self.rng_absence = rng_absence
         self.rng_grades = rng_grades
         self.subject = subject

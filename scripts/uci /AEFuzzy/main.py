@@ -35,7 +35,6 @@ def main(args):
 
     # Train-val-test split
     X_trval, X_test, y_trval, y_test = train_test_split(dataloader.X, dataloader.Y, test_size=0.1, random_state=seed)
-
     X_train, X_val, y_train, y_val = train_test_split(X_trval, y_trval, test_size=0.11, random_state=seed)
 
     model = AEFuzzy(data_dim=X_train.shape[1], drop_rate=args.dropout_rate).to(device)
