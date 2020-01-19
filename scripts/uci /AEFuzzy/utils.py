@@ -4,13 +4,11 @@ import pandas as pd
 import torch
 import numpy as np
 import torch.nn as nn
-from torch.autograd import Variable, Function
-from sklearn.metrics import r2_score
+from torch.autograd import Variable
 
 class Create_Dataset():
-    def __init__(self, data_size, num_fuzz_var, rng_absence, rng_grades, subject=0):
+    def __init__(self, num_fuzz_var, rng_absence, rng_grades, subject=0):
         
-        self.data_size = data_size
         self.num_fuzz_var = num_fuzz_var
         self.mf_absence = {}
         self.mf_grades = {}
@@ -31,9 +29,9 @@ class Create_Dataset():
     def read_data(self):
         
         if self.subject:
-            dataset = pd.read_csv('../dataset/student-mat.csv', sep=';')
+            dataset = pd.read_csv('../data/student-mat.csv', sep=';')
         else:
-            dataset = pd.read_csv('../dataset/student-por.csv', sep=';')
+            dataset = pd.read_csv('../data/student-por.csv', sep=';')
 
         imp_features = dataset.drop(['school', 'sex', 'reason'], axis=1)
         address_mapping = {"U":0, "R":1}
@@ -75,15 +73,15 @@ class Create_Dataset():
 
         def __prepare_data():
             
-            x = np.zeros((self.data_size,self.num_fuzz_var*3))
+            x = np.zeros((self.X_crisp.shape[0], self.num_fuzz_var*3))
 
-            for i in range(self.data_size):
+            for i in range(self.X_crisp.shape[0]):
                 
                 x[i,0]=fuzz.interp_membership(self.rng_absence, self.mf_absence['lo'], self.X_fuzzy[i,0])
                 x[i,1]=fuzz.interp_membership(self.rng_absence, self.mf_absence['md'], self.X_fuzzy[i,0])
                 x[i,2]=fuzz.interp_membership(self.rng_absence, self.mf_absence['hi'], self.X_fuzzy[i,0])
 
-            for i in range(self.data_size):
+            for i in range(self.X_crisp.shape[0]):
                 
                 for j in range(1,self.num_fuzz_var):
 
@@ -103,7 +101,7 @@ def init_weights(m):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
 
-def train_epoch(model, input_array, label_array, criterion_decoder, criterion_regressor, optimizer, batch_size, w1, device):
+def train_epoch(model, input_array, label_array, criterion_decoder, criterion_regressor, optimizer, metric, batch_size, w1, device):
     
     model.train()
 
@@ -111,22 +109,19 @@ def train_epoch(model, input_array, label_array, criterion_decoder, criterion_re
 
     trainsize = int(input_array.shape[0])
 
-    y_pred=[]
-    y_true=[]        
+    y_pred=np.zeros([trainsize])
+    y_true=np.zeros([trainsize])
     
     for i in range(0, trainsize, batch_size):
 
         if i+batch_size<=trainsize:
             inputs = input_array[i:i+batch_size]
             labels = label_array[i:i+batch_size]
+            y_true[i:i+batch_size] = labels
         else:
             inputs = input_array[i:]
             labels = label_array[i:]
-
-        if y_true:
-            y_true = np.vstack([y_true, labels])
-        else:
-            y_true = labels
+            y_true[i:] = labels
         
         inputs, labels = Variable(torch.from_numpy(inputs).float().to(device)), Variable(torch.from_numpy(labels).float().to(device))                       
         # Initialize gradients to zero
@@ -136,10 +131,7 @@ def train_epoch(model, input_array, label_array, criterion_decoder, criterion_re
         
         output_regressor = torch.squeeze(output_regressor, dim=1)
         
-        if y_pred:
-            y_pred = np.vstack([y_pred, output_regressor.detach().cpu().numpy()])
-        else:
-            y_pred = output_regressor.detach().cpu().numpy()
+        y_pred[i:i+output_regressor.shape[0]] = output_regressor.detach().cpu().numpy()
         # Compute loss/error
         loss =  (1-w1)*criterion_decoder(output_decoder, inputs)+w1*criterion_regressor(output_regressor, labels)
         # Accumulate loss per batch
@@ -149,12 +141,12 @@ def train_epoch(model, input_array, label_array, criterion_decoder, criterion_re
         # Update the network parameters
         optimizer.step()
 
-    train_r2 = r2_score(y_true, y_pred)
+    train_score = metric(y_true, y_pred)
 
-    return(model, runningLoss/float(trainsize/batch_size), train_r2)
+    return(model, runningLoss/float(trainsize/batch_size), train_score)
 
 
-def val_epoch(model, input_array, label_array, criterion_decoder, criterion_regressor, batch_size, device):
+def val_epoch(model, input_array, label_array, criterion_decoder, criterion_regressor, metric, batch_size, device):
 
     model.eval()
 
@@ -162,8 +154,8 @@ def val_epoch(model, input_array, label_array, criterion_decoder, criterion_regr
 
     runningLoss = 0.0
 
-    y_pred=[]
-    y_true=[] 
+    y_pred=np.zeros([valsize])
+    y_true=np.zeros([valsize])
 
     with torch.no_grad():      
 
@@ -172,14 +164,11 @@ def val_epoch(model, input_array, label_array, criterion_decoder, criterion_regr
             if i+batch_size<=valsize:
                 inputs = input_array[i:i+batch_size]
                 labels = label_array[i:i+batch_size]
+                y_true[i:i+batch_size] = labels
             else:
                 inputs = input_array[i:]
                 labels = label_array[i:]
-
-            if y_true:
-                y_true = np.vstack([y_true, labels])
-            else:
-                y_true = labels
+                y_true[i:] = labels
 
             inputs, labels = torch.from_numpy(inputs).float().to(device), torch.from_numpy(labels).float().to(device)                      
             # Feed-forward
@@ -191,23 +180,20 @@ def val_epoch(model, input_array, label_array, criterion_decoder, criterion_regr
             # Accumulate loss per batch
             runningLoss += loss.item()
 
-            if y_pred:
-                y_pred = np.vstack([y_pred, output_regressor.cpu().numpy()])
-            else:
-                y_pred = output_regressor.cpu().numpy()
+            y_pred[i:i+output_regressor.shape[0]] = output_regressor.cpu().numpy()
 
-    val_r2 = r2_score(y_true, y_pred)
+    val_score = metric(y_true, y_pred)
 
-    return (runningLoss/float(valsize/batchsize), val_r2)
+    return (runningLoss/float(valsize/batch_size), val_score)
 
-def test_model(model, input_array, label_array, batch_size, device):
+def test_model(model, input_array, label_array, metric, batch_size, device):
 
     model.eval()
 
     testsize = int(input_array.shape[0])
 
-    y_pred=[]
-    y_true=[]
+    y_pred=np.zeros([testsize])
+    y_true=np.zeros([testsize])
 
     with torch.no_grad():      
 
@@ -216,14 +202,11 @@ def test_model(model, input_array, label_array, batch_size, device):
             if i+batch_size<=testsize:
                 inputs = input_array[i:i+batch_size]
                 labels = label_array[i:i+batch_size]
+                y_true[i:i+batch_size] = labels
             else:
                 inputs = input_array[i:]
                 labels = label_array[i:]
-
-            if y_true:
-                y_true = np.vstack([y_true, labels])
-            else:
-                y_true = labels
+                y_true[i:] = labels
 
             inputs = torch.from_numpy(inputs).float().to(device) 
             # Feed-forward
@@ -231,12 +214,9 @@ def test_model(model, input_array, label_array, batch_size, device):
 
             output_regressor = torch.squeeze(output_regressor, dim=1)
 
-            if y_pred:
-                y_pred = np.vstack([y_pred, output_regressor.cpu().numpy()])
-            else:
-                y_pred = output_regressor.cpu().numpy()
+            y_pred[i:i+output_regressor.shape[0]] = output_regressor.cpu().numpy()
 
-    test_r2 = r2_score(y_true, y_pred)
+    test_score = metric(y_true, y_pred)
 
-    return test_r2
+    return test_score
     

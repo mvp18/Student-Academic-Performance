@@ -24,7 +24,7 @@ class Create_Dataset():
 
     def read_data(self):
         
-        dataset = pd.read_csv('../dataset/xAPI-Edu-Data.csv')
+        dataset = pd.read_csv('../data/xAPI-Edu-Data.csv')
 
         self.data_size = dataset.shape[0]
 

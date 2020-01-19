@@ -10,7 +10,7 @@ class AEFuzzy(nn.Module):
 
         self.encoder = nn.Sequential(
             
-            nn.Linear(35, 32),
+            nn.Linear(self.data_dim, 32),
             nn.BatchNorm1d(32),
             nn.PReLU(),
             nn.Dropout(self.drop_rate),
@@ -24,7 +24,7 @@ class AEFuzzy(nn.Module):
             nn.Linear(16, 32),
             nn.BatchNorm1d(32),
             nn.PReLU(),
-            nn.Dropout(self.drop_rate)
+            nn.Dropout(self.drop_rate),
             nn.Linear(32, self.data_dim)
             )
 

@@ -25,6 +25,8 @@ def main(args):
     seed = 42
     np.random.seed(seed)
 
+    torch.manual_seed(seed)
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
 
@@ -36,7 +38,7 @@ def main(args):
 
     X_train, X_val, y_train, y_val = train_test_split(X_trval, y_trval, test_size=0.11, random_state=seed, stratify=y_trval)
 
-    model = AEFuzzy(data_dim=X_train.shape[1], num_classes=3, drop_rate=args.dropout_rate, pretrained=args.pretrained)
+    model = AEFuzzy(data_dim=X_train.shape[1], num_classes=3, drop_rate=args.dropout_rate)
     
     if args.pretrained:
         print('Loading pretrained weights for encoder and decoder')
@@ -59,12 +61,15 @@ def main(args):
     else:
         criterion_classifier = nn.CrossEntropyLoss()
     
+    params_to_optimize=[]
+    params_to_optimize.append({'params':model.encoder.parameters()})
+    params_to_optimize.append({'params':model.decoder.parameters()})
+    params_to_optimize.append({'params':model.classifier.parameters(), 'weight_decay':args.dense_l2})
+
     if args.optimizer:
-        optimizer = optim.Adam([{'params': model.classifier.parameters(), 'weight_decay':args.dense_l2} 
-                           ], lr=args.learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+        optimizer = optim.Adam(params_to_optimize, lr=args.learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
     else:
-        optimizer = optim.SGD([{'params': model.classifier.parameters(), 'weight_decay':args.dense_l2} 
-                           ], lr=args.learning_rate, nesterov=True, momentum=0.9)
+        optimizer = optim.SGD(params_to_optimize, lr=args.learning_rate, nesterov=True, momentum=0.9)
 
     training_loss = []
     validation_loss = []
@@ -109,7 +114,6 @@ def main(args):
 
     suffix = 'test_acc-' + str(float("{0:.4f}".format(test_acc.item()))) + \
         '_val-acc-' + str(float("{0:.4f}".format(best_accuracy.item()))) + \
-        '_pt-' + str(bool(args.pretrained)) + \
         '_lr-' + str(args.learning_rate) + \
         '_e-' + str(args.num_epochs) + \
         '_wl-' + str(args.weighted_loss) + \
@@ -121,29 +125,29 @@ def main(args):
     df_save = pd.DataFrame({'train_loss':training_loss, 'val_loss':validation_loss, 'val_acc':validation_acc})
     df_save.to_csv(open(savepath + suffix + '.csv', 'w'))
 
-    loss_dir = './results/losses/'
+    # loss_dir = './results/losses/'
 
-    if not os.path.exists(loss_dir):
-        os.makedirs(loss_dir)
+    # if not os.path.exists(loss_dir):
+    #     os.makedirs(loss_dir)
     
-    fig1 = plt.figure()
-    plt.plot(training_loss, label='Training Loss')
-    plt.plot(validation_loss, label='Validation Loss')
-    plt.legend(loc='upper right')
-    plt.xlabel('Epoch')
-    plt.ylabel('Losses')
-    fig1.savefig(loss_dir+suffix+'_losses.png', dpi=300)
+    # fig1 = plt.figure()
+    # plt.plot(training_loss, label='Training Loss')
+    # plt.plot(validation_loss, label='Validation Loss')
+    # plt.legend(loc='upper right')
+    # plt.xlabel('Epoch')
+    # plt.ylabel('Losses')
+    # fig1.savefig(loss_dir+suffix+'_losses.png', dpi=300)
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Neuro-fuzzy methods for predicting student academic performance.")
-    parser.add_argument('-pt', '--pretrained', help="if 0 all weights are initialized from a xavier distribution", default=1, type=bool)
-    parser.add_argument('-opt', '--optimizer', help="if 0 optimizer changes to SGD", default=1, type=bool)
+    parser.add_argument('-pt', '--pretrained', help="if 0 all weights are initialized from a xavier distribution", default=0, type=int)
+    parser.add_argument('-opt', '--optimizer', help="if 0 optimizer changes to SGD", default=1, type=int)
     parser.add_argument('-lr', '--learning_rate', help="learning rate for Adam", default=1e-3, type=float)
-    parser.add_argument('-wl', '--weighted_loss', help="whether or not to use weighted cross-entropy loss", default=False, type=bool)
+    parser.add_argument('-wl', '--weighted_loss', help="whether or not to use weighted cross-entropy loss", default=0, type=int)
     parser.add_argument('-cl_wt', '--classifier_loss_wt', help="choose weight between 0 and 1 for classifier loss", default=0.7, type=float)
     parser.add_argument('-e', '--num_epochs', help="epochs to run", default=300, type=int)
-    parser.add_argument('-bs', '--batch_size', help="batch size used throughout", default=8, type=int)
+    parser.add_argument('-bs', '--batch_size', help="batch size used throughout", default=32, type=int)
     parser.add_argument('-dr', '--dropout_rate', help="dropout rate for encoder and classifier", default=0.1, type=float)
     parser.add_argument('-l2', '--dense_l2', help="l2 regularization for last dense classifier layer", default=0.0, type=float)
 

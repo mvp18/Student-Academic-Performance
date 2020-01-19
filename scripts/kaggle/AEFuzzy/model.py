@@ -2,13 +2,12 @@ import torch
 import torch.nn as nn
 
 class AEFuzzy(nn.Module):    
-    def __init__(self, data_dim=24, num_classes=3, drop_rate=0.1, pretrained=True):
+    def __init__(self, data_dim=24, num_classes=3, drop_rate=0.1):
         super(AEFuzzy, self).__init__()
 
         self.num_classes = num_classes
         self.drop_rate = drop_rate
-        self.data_dim = data_dim
-        self.pretrained = pretrained  
+        self.data_dim = data_dim  
         
         self.encoder = nn.Sequential(
             
@@ -45,14 +44,14 @@ class AEFuzzy(nn.Module):
 
         	)
         
-        if self.pretrained:
-            for m in self.classifier.children():
-                if isinstance(m, nn.Linear):
-                    nn.init.xavier_uniform_(m.weight)
-                    nn.init.zeros_(m.bias)
-                elif isinstance(m, nn.BatchNorm1d):
-                    nn.init.constant_(m.weight, 1)
-                    nn.init.constant_(m.bias, 0)
+        # if self.pretrained:
+        #     for m in self.classifier.children():
+        #         if isinstance(m, nn.Linear):
+        #             nn.init.xavier_uniform_(m.weight)
+        #             nn.init.zeros_(m.bias)
+        #         elif isinstance(m, nn.BatchNorm1d):
+        #             nn.init.constant_(m.weight, 1)
+        #             nn.init.constant_(m.bias, 0)
                 
 
     def forward(self, x):
