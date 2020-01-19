@@ -1,1 +1,1 @@
-# Student-Academic-Performance
+This repository contains python implementation of neuro-fuzzy methods for prediction of a student's academic performance based on his academic history, lifestyle and day-to-day activities. We use 2 publicly available student performance datasets for our work - <a href = "https://www.kaggle.com/aljarah/xAPI-Edu-Data">xAPI-Edu-Data</a> and the <a href="https://archive.ics.uci.edu/ml/datasets/student+performance"> UCI Student Performance Data Set</a>.
